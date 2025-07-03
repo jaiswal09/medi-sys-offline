@@ -1,12 +1,12 @@
 import React, { memo, useState } from 'react';
 import { Bell, Search, LogOut, User, X, Database } from 'lucide-react';
 import { useLocalAuth } from '../../hooks/useLocalAuth';
-import { useLocalInventory } from '../../hooks/useLocalInventory';
+import { useInventory } from '../../hooks/useInventory';
 import { format } from 'date-fns';
 
 const Header = memo(() => {
   const { user, signOut } = useLocalAuth();
-  const { alerts } = useLocalInventory();
+  const { alerts } = useInventory();
   const [showNotifications, setShowNotifications] = useState(false);
 
   const activeAlerts = alerts.filter(alert => alert.status === 'ACTIVE');
@@ -112,8 +112,8 @@ const Header = memo(() => {
               <User className="w-4 h-4 text-gray-600" />
             </div>
             <div className="hidden sm:block">
-              <p className="text-sm font-medium text-gray-900">{user?.fullName}</p>
-              <p className="text-xs text-gray-500 capitalize">{user?.role?.replace('_', ' ').toLowerCase()}</p>
+              <p className="text-sm font-medium text-gray-900">{user?.fullName || 'User'}</p>
+              <p className="text-xs text-gray-500 capitalize">{user?.role?.replace('_', ' ').toLowerCase() || 'No role'}</p>
             </div>
             <button
               onClick={signOut}
