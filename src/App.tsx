@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useLocalAuth } from './hooks/useLocalAuth';
 import LoginForm from './components/Auth/LoginForm';
-import Sidebar from './components/Layout/Sidebar';
-import Header from './components/Layout/Header';
+import Layout from './components/Layout/Layout';
 import Dashboard from './components/Dashboard/Dashboard';
 import InventoryPage from './components/Inventory/InventoryPage';
 import TransactionsPage from './components/Transactions/TransactionsPage';
@@ -12,10 +12,11 @@ import MaintenancePage from './components/Maintenance/MaintenancePage';
 import AlertsPage from './components/Alerts/AlertsPage';
 import UsersPage from './components/Users/UsersPage';
 import SettingsPage from './components/Settings/SettingsPage';
+import DebugPanel from './components/Debug/DebugPanel';
+import AINotificationPanel from './components/AI/AINotificationPanel';
 
 function App() {
   const { user, loading } = useLocalAuth();
-  const [activeSection, setActiveSection] = useState('dashboard');
 
   // Show loading with timeout protection
   if (loading) {
@@ -49,38 +50,27 @@ function App() {
     );
   }
 
-  const renderContent = () => {
-    switch (activeSection) {
-      case 'dashboard':
-        return <Dashboard />;
-      case 'inventory':
-        return <InventoryPage />;
-      case 'transactions':
-        return <TransactionsPage />;
-      case 'maintenance':
-        return <MaintenancePage />;
-      case 'alerts':
-        return <AlertsPage />;
-      case 'analytics':
-        return <ReportsPage />;
-      case 'users':
-        return <UsersPage />;
-      case 'settings':
-        return <SettingsPage />;
-      default:
-        return <Dashboard />;
-    }
-  };
-
   return (
-    <div className="h-screen bg-gray-100 flex">
-      <Sidebar activeSection={activeSection} onSectionChange={setActiveSection} />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header />
-        <main className="flex-1 overflow-y-auto">
-          {renderContent()}
-        </main>
-      </div>
+    <>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="inventory" element={<InventoryPage />} />
+          <Route path="transactions" element={<TransactionsPage />} />
+          <Route path="maintenance" element={<MaintenancePage />} />
+          <Route path="alerts" element={<AlertsPage />} />
+          <Route path="analytics" element={<ReportsPage />} />
+          <Route path="users" element={<UsersPage />} />
+          <Route path="settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
+      
+      {/* Global Components */}
+      <AINotificationPanel />
+      <DebugPanel />
+      
       <Toaster 
         position="top-right"
         toastOptions={{
@@ -91,7 +81,7 @@ function App() {
           },
         }}
       />
-    </div>
+    </>
   );
 }
 
