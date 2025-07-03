@@ -1,4 +1,5 @@
 import React, { memo } from 'react';
+import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Package, 
@@ -10,32 +11,32 @@ import {
   Settings,
   Bug
 } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
+import { useLocalAuth } from '../../hooks/useLocalAuth';
 import { useDebug } from '../../hooks/useDebug';
 
-interface SidebarProps {
-  activeSection: string;
-  onSectionChange: (section: string) => void;
-}
-
 const navigation = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'staff', 'medical_personnel'] },
-  { id: 'inventory', label: 'Inventory', icon: Package, roles: ['admin', 'staff', 'medical_personnel'] },
-  { id: 'transactions', label: 'Transactions', icon: ArrowRightLeft, roles: ['admin', 'staff', 'medical_personnel'] },
-  { id: 'maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'staff'] },
-  { id: 'alerts', label: 'Alerts', icon: AlertTriangle, roles: ['admin', 'staff'] },
-  { id: 'analytics', label: 'Analytics', icon: BarChart3, roles: ['admin', 'staff'] },
-  { id: 'users', label: 'Users', icon: Users, roles: ['admin'] },
-  { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] }
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard', roles: ['ADMIN', 'STAFF', 'MEDICAL_PERSONNEL'] },
+  { id: 'inventory', label: 'Inventory', icon: Package, path: '/inventory', roles: ['ADMIN', 'STAFF', 'MEDICAL_PERSONNEL'] },
+  { id: 'transactions', label: 'Transactions', icon: ArrowRightLeft, path: '/transactions', roles: ['ADMIN', 'STAFF', 'MEDICAL_PERSONNEL'] },
+  { id: 'maintenance', label: 'Maintenance', icon: Wrench, path: '/maintenance', roles: ['ADMIN', 'STAFF'] },
+  { id: 'alerts', label: 'Alerts', icon: AlertTriangle, path: '/alerts', roles: ['ADMIN', 'STAFF'] },
+  { id: 'analytics', label: 'Analytics', icon: BarChart3, path: '/analytics', roles: ['ADMIN', 'STAFF'] },
+  { id: 'users', label: 'Users', icon: Users, path: '/users', roles: ['ADMIN'] },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/settings', roles: ['ADMIN'] }
 ];
 
-const Sidebar = memo(({ activeSection, onSectionChange }: SidebarProps) => {
-  const { profile } = useAuth();
+const Sidebar = memo(() => {
+  const { user, profile } = useLocalAuth();
   const { toggleDebugPanel, debugInfo } = useDebug();
 
+  // Use user role for filtering navigation
+  const userRole = user?.role || profile?.role;
+  
   const filteredNavigation = navigation.filter(item => 
-    profile?.role && item.roles.includes(profile.role)
+    userRole && item.roles.includes(userRole)
   );
+
+  console.log('Sidebar Debug:', { user, profile, userRole, filteredNavigation });
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
@@ -54,25 +55,36 @@ const Sidebar = memo(({ activeSection, onSectionChange }: SidebarProps) => {
 
       {/* Navigation */}
       <nav className="flex-1 p-4 space-y-1">
-        {filteredNavigation.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeSection === item.id;
-          
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSectionChange(item.id)}
-              className={`w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                isActive
-                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                  : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <Icon className="w-5 h-5" />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+        {filteredNavigation.length > 0 ? (
+          filteredNavigation.map((item) => {
+            const Icon = item.icon;
+            
+            return (
+              <NavLink
+                key={item.id}
+                to={item.path}
+                className={({ isActive }) =>
+                  `w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                  }`
+                }
+              >
+                <Icon className="w-5 h-5" />
+                <span>{item.label}</span>
+              </NavLink>
+            );
+          })
+        ) : (
+          <div className="text-center py-8">
+            <Package className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+            <p className="text-sm text-gray-500">Loading navigation...</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Role: {userRole || 'Not set'}
+            </p>
+          </div>
+        )}
       </nav>
 
       {/* Connection Status */}
@@ -93,7 +105,7 @@ const Sidebar = memo(({ activeSection, onSectionChange }: SidebarProps) => {
         </div>
         
         {/* Debug Button for Admin/Staff */}
-        {(profile?.role === 'admin' || profile?.role === 'staff') && (
+        {(userRole === 'ADMIN' || userRole === 'STAFF') && (
           <button
             onClick={toggleDebugPanel}
             className="w-full flex items-center space-x-2 px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50 rounded"
@@ -110,15 +122,15 @@ const Sidebar = memo(({ activeSection, onSectionChange }: SidebarProps) => {
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
             <span className="text-xs font-medium text-gray-600">
-              {profile?.full_name?.split(' ').map(n => n[0]).join('').slice(0, 2)}
+              {(user?.fullName || profile?.fullName)?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
             </span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">
-              {profile?.full_name}
+              {user?.fullName || profile?.fullName || 'User'}
             </p>
             <p className="text-xs text-gray-500 capitalize">
-              {profile?.role?.replace('_', ' ')}
+              {(user?.role || profile?.role)?.replace('_', ' ').toLowerCase() || 'No role'}
             </p>
           </div>
         </div>
