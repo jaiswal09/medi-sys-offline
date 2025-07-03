@@ -1,0 +1,180 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  password    String
+  fullName    String   @map("full_name")
+  role        String   @default("MEDICAL_PERSONNEL") // ADMIN, STAFF, MEDICAL_PERSONNEL
+  department  String?
+  phoneNumber String?  @map("phone_number")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  createdItems        InventoryItem[]     @relation("CreatedBy")
+  transactions        Transaction[]
+  createdMaintenances MaintenanceSchedule[] @relation("CreatedBy")
+  assignedMaintenances MaintenanceSchedule[] @relation("TechnicianAssigned")
+  acknowledgedAlerts  LowStockAlert[]
+  approvedTransactions Transaction[]       @relation("ApprovedBy")
+  systemLogs          SystemLog[]
+  createdCategories   Category[]
+
+  @@map("users")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#2563eb")
+  icon        String   @default("Package")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by")
+
+  // Relations
+  creator User?           @relation(fields: [createdBy], references: [id])
+  items   InventoryItem[]
+
+  @@map("categories")
+}
+
+model InventoryItem {
+  id                     String    @id @default(uuid())
+  name                   String
+  description            String?
+  categoryId             String?   @map("category_id")
+  itemType               String    @map("item_type") // EQUIPMENT, SUPPLIES, MEDICATIONS, CONSUMABLES
+  quantity               Int       @default(0)
+  minQuantity            Int       @map("min_quantity") @default(0)
+  maxQuantity            Int?      @map("max_quantity")
+  unitPrice              Float?    @map("unit_price")
+  location               String
+  qrCode                 String?   @unique @map("qr_code")
+  barcode                String?
+  status                 String    @default("AVAILABLE") // AVAILABLE, IN_USE, MAINTENANCE, LOST, EXPIRED, DISCONTINUED
+  expiryDate             DateTime? @map("expiry_date")
+  lastMaintenance        DateTime? @map("last_maintenance")
+  nextMaintenance        DateTime? @map("next_maintenance")
+  maintenanceIntervalDays Int?     @map("maintenance_interval_days")
+  imageUrl               String?   @map("image_url")
+  notes                  String?
+  serialNumber           String?   @map("serial_number")
+  manufacturer           String?
+  model                  String?
+  purchaseDate           DateTime? @map("purchase_date")
+  warrantyExpiry         DateTime? @map("warranty_expiry")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  createdBy              String?   @map("created_by")
+
+  // Relations
+  category            Category?             @relation(fields: [categoryId], references: [id])
+  creator             User?                 @relation("CreatedBy", fields: [createdBy], references: [id])
+  transactions        Transaction[]
+  maintenanceSchedules MaintenanceSchedule[]
+  lowStockAlerts      LowStockAlert[]
+
+  @@map("inventory_items")
+}
+
+model Transaction {
+  id                 String    @id @default(uuid())
+  itemId             String    @map("item_id")
+  userId             String    @map("user_id")
+  transactionType    String    @map("transaction_type") // CHECKOUT, CHECKIN, LOST, DAMAGED, MAINTENANCE
+  quantity           Int
+  dueDate            DateTime? @map("due_date")
+  returnedDate       DateTime? @map("returned_date")
+  status             String    @default("ACTIVE") // ACTIVE, COMPLETED, OVERDUE, LOST, DAMAGED
+  notes              String?
+  approvedBy         String?   @map("approved_by")
+  approvedAt         DateTime? @map("approved_at")
+  locationUsed       String?   @map("location_used")
+  conditionOnReturn  String?   @map("condition_on_return")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  // Relations
+  item     InventoryItem @relation(fields: [itemId], references: [id])
+  user     User          @relation(fields: [userId], references: [id])
+  approver User?         @relation("ApprovedBy", fields: [approvedBy], references: [id])
+
+  @@map("transactions")
+}
+
+model MaintenanceSchedule {
+  id                  String    @id @default(uuid())
+  itemId              String    @map("item_id")
+  maintenanceType     String    @map("maintenance_type") // PREVENTIVE, CORRECTIVE, CALIBRATION, INSPECTION
+  scheduledDate       DateTime  @map("scheduled_date")
+  completedDate       DateTime? @map("completed_date")
+  status              String    @default("SCHEDULED") // SCHEDULED, IN_PROGRESS, COMPLETED, CANCELLED, OVERDUE
+  technicianId        String?   @map("technician_id")
+  description         String?
+  cost                Float?
+  notes               String?
+  nextMaintenanceDate DateTime? @map("next_maintenance_date")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  createdBy           String?   @map("created_by")
+
+  // Relations
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  technician User?         @relation("TechnicianAssigned", fields: [technicianId], references: [id])
+  creator    User?         @relation("CreatedBy", fields: [createdBy], references: [id])
+
+  @@map("maintenance_schedules")
+}
+
+model LowStockAlert {
+  id               String     @id @default(uuid())
+  itemId           String     @map("item_id")
+  currentQuantity  Int        @map("current_quantity")
+  minQuantity      Int        @map("min_quantity")
+  alertLevel       String     @map("alert_level") // LOW, CRITICAL, OUT_OF_STOCK
+  status           String     @default("ACTIVE") // ACTIVE, ACKNOWLEDGED, RESOLVED
+  acknowledgedBy   String?    @map("acknowledged_by")
+  acknowledgedAt   DateTime?  @map("acknowledged_at")
+  resolvedAt       DateTime?  @map("resolved_at")
+  createdAt        DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  item         InventoryItem @relation(fields: [itemId], references: [id])
+  acknowledger User?         @relation(fields: [acknowledgedBy], references: [id])
+
+  @@unique([itemId, status])
+  @@map("low_stock_alerts")
+}
+
+model SystemLog {
+  id         String    @id @default(uuid())
+  userId     String?   @map("user_id")
+  action     String
+  tableName  String?   @map("table_name")
+  recordId   String?   @map("record_id")
+  oldValues  String?   @map("old_values") // JSON string
+  newValues  String?   @map("new_values") // JSON string
+  ipAddress  String?   @map("ip_address")
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id])
+
+  @@map("system_logs")
+}
