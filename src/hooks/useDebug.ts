@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
 import type { DebugInfo, ConnectionStatus } from '../types';
 
 let requestId = 0;
@@ -10,8 +9,8 @@ export const useDebug = () => {
   const [debugInfo, setDebugInfo] = useState<DebugInfo>({
     connectionStatus: {
       online: navigator.onLine,
-      supabaseConnected: false,
-      realtimeConnected: false
+      supabaseConnected: true, // Assume connected for local setup
+      realtimeConnected: true
     },
     apiRequests: [],
     realtimeEvents: [],
@@ -25,14 +24,13 @@ export const useDebug = () => {
     const startTime = Date.now();
     
     try {
-      // Test basic Supabase connection
-      const { error } = await supabase.from('categories').select('count').limit(1);
+      // Simple connection check for local setup
       const latency = Date.now() - startTime;
       
       const status: ConnectionStatus = {
         online: navigator.onLine,
-        supabaseConnected: !error,
-        realtimeConnected: true, // Simplified check
+        supabaseConnected: true, // Local database is always connected
+        realtimeConnected: true,
         lastPing: Date.now(),
         latency
       };
@@ -93,25 +91,13 @@ export const useDebug = () => {
   // Environment info
   const updateEnvironmentInfo = useCallback(async () => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      let userProfile = null;
-      
-      if (user) {
-        const { data } = await supabase
-          .from('user_profiles')
-          .select('role')
-          .eq('user_id', user.id)
-          .single();
-        userProfile = data;
-      }
-
       setDebugInfo(prev => ({
         ...prev,
         environment: {
-          supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-          projectId: import.meta.env.VITE_SUPABASE_URL?.split('//')[1]?.split('.')[0],
-          userId: user?.id,
-          userRole: userProfile?.role
+          supabaseUrl: 'Local Database',
+          projectId: 'local-medical-inventory',
+          userId: 'local-user',
+          userRole: 'admin'
         }
       }));
     } catch (error) {
@@ -182,41 +168,6 @@ export const useDebug = () => {
     window.addEventListener('online', handleOnlineStatus);
     window.addEventListener('offline', handleOnlineStatus);
 
-    // Simplified realtime monitoring
-    let realtimeChannel: any = null;
-    
-    try {
-      realtimeChannel = supabase.channel('debug-monitoring');
-      
-      realtimeChannel.on('system', {}, (payload: any) => {
-        const isConnected = payload.status === 'ok';
-        setDebugInfo(prev => ({
-          ...prev,
-          connectionStatus: {
-            ...prev.connectionStatus,
-            realtimeConnected: isConnected
-          }
-        }));
-        
-        logRealtimeEvent('system', 'debug', payload.status, payload);
-      });
-
-      realtimeChannel.subscribe((status: string) => {
-        const isConnected = status === 'SUBSCRIBED';
-        setDebugInfo(prev => ({
-          ...prev,
-          connectionStatus: {
-            ...prev.connectionStatus,
-            realtimeConnected: isConnected
-          }
-        }));
-        
-        logRealtimeEvent('subscription', 'debug', status, null);
-      });
-    } catch (error) {
-      console.warn('Realtime monitoring not available:', error);
-    }
-
     // Keyboard shortcut for debug panel (Ctrl/Cmd + Shift + D)
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === 'D') {
@@ -230,56 +181,15 @@ export const useDebug = () => {
     // Periodic connection check
     const connectionCheckInterval = setInterval(() => {
       performPingTest();
-    }, 60000); // Every 60 seconds (reduced frequency)
+    }, 60000); // Every 60 seconds
 
     return () => {
       window.removeEventListener('online', handleOnlineStatus);
       window.removeEventListener('offline', handleOnlineStatus);
       document.removeEventListener('keydown', handleKeyDown);
       clearInterval(connectionCheckInterval);
-      
-      if (realtimeChannel) {
-        try {
-          realtimeChannel.unsubscribe();
-        } catch (error) {
-          console.warn('Error unsubscribing from realtime:', error);
-        }
-      }
     };
-  }, [updateEnvironmentInfo, checkConnectionStatus, logRealtimeEvent, toggleDebugPanel, performPingTest]);
-
-  // Simplified fetch interceptor
-  useEffect(() => {
-    const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      const startTime = Date.now();
-      const url = typeof args[0] === 'string' ? args[0] : args[0].url;
-      const method = typeof args[1] === 'object' && args[1]?.method ? args[1].method : 'GET';
-      
-      try {
-        const response = await originalFetch(...args);
-        const duration = Date.now() - startTime;
-        
-        if (url.includes('supabase')) {
-          logApiRequest(method, url, response.status, duration);
-        }
-        
-        return response;
-      } catch (error: any) {
-        const duration = Date.now() - startTime;
-        
-        if (url.includes('supabase')) {
-          logApiRequest(method, url, 0, duration, error.message);
-        }
-        
-        throw error;
-      }
-    };
-
-    return () => {
-      window.fetch = originalFetch;
-    };
-  }, [logApiRequest]);
+  }, [updateEnvironmentInfo, checkConnectionStatus, toggleDebugPanel, performPingTest]);
 
   return {
     debugInfo,
