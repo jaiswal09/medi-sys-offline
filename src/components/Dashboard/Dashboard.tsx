@@ -12,14 +12,14 @@ const Dashboard = memo(() => {
     const last7Days = Array.from({ length: 7 }, (_, i) => {
       const date = startOfDay(subDays(new Date(), i));
       const dayTransactions = transactions.filter(t => 
-        new Date(t.created_at) >= date && 
-        new Date(t.created_at) < new Date(date.getTime() + 24 * 60 * 60 * 1000)
+        new Date(t.createdAt) >= date && 
+        new Date(t.createdAt) < new Date(date.getTime() + 24 * 60 * 60 * 1000)
       );
       
       return {
         date: format(date, 'MMM dd'),
-        checkouts: dayTransactions.filter(t => t.transaction_type === 'checkout').length,
-        checkins: dayTransactions.filter(t => t.transaction_type === 'checkin').length
+        checkouts: dayTransactions.filter(t => t.transactionType === 'CHECKOUT').length,
+        checkins: dayTransactions.filter(t => t.transactionType === 'CHECKIN').length
       };
     }).reverse();
     
@@ -34,7 +34,7 @@ const Dashboard = memo(() => {
       const categoryName = item.category?.name || 'Uncategorized';
       const existing = categoryMap.get(categoryName) || { category: categoryName, count: 0, value: 0 };
       existing.count += 1;
-      existing.value += (item.unit_price || 0) * item.quantity;
+      existing.value += (item.unitPrice || 0) * item.quantity;
       categoryMap.set(categoryName, existing);
     });
     
@@ -48,7 +48,7 @@ const Dashboard = memo(() => {
       .map(transaction => ({
         ...transaction,
         item_name: transaction.item?.name || 'Unknown Item',
-        user_name: transaction.user?.full_name || 'Unknown User'
+        user_name: transaction.user?.fullName || 'Unknown User'
       }));
   }, [transactions]);
 
@@ -56,8 +56,8 @@ const Dashboard = memo(() => {
   const maintenanceDue = useMemo(() => {
     const today = new Date();
     return maintenance.filter(m => 
-      m.status === 'scheduled' && 
-      new Date(m.scheduled_date) <= today
+      m.status === 'SCHEDULED' && 
+      new Date(m.scheduledDate) <= today
     ).length;
   }, [maintenance]);
 
@@ -244,18 +244,18 @@ const Dashboard = memo(() => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                        activity.transaction_type === 'checkout' ? 'bg-blue-100 text-blue-800' :
-                        activity.transaction_type === 'checkin' ? 'bg-green-100 text-green-800' :
+                        activity.transactionType === 'CHECKOUT' ? 'bg-blue-100 text-blue-800' :
+                        activity.transactionType === 'CHECKIN' ? 'bg-green-100 text-green-800' :
                         'bg-gray-100 text-gray-800'
                       }`}>
-                        {activity.transaction_type}
+                        {activity.transactionType}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {activity.quantity}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {format(new Date(activity.created_at), 'MMM dd, HH:mm')}
+                      {format(new Date(activity.createdAt), 'MMM dd, HH:mm')}
                     </td>
                   </tr>
                 ))}
@@ -273,7 +273,7 @@ const Dashboard = memo(() => {
             {alerts.slice(0, 5).map((alert) => (
               <div key={alert.id} className="flex items-center space-x-3">
                 <div className={`w-2 h-2 rounded-full ${
-                  alert.alert_level === 'critical' || alert.alert_level === 'out_of_stock' 
+                  alert.alertLevel === 'CRITICAL' || alert.alertLevel === 'OUT_OF_STOCK' 
                     ? 'bg-red-500' 
                     : 'bg-orange-500'
                 }`} />
@@ -282,15 +282,15 @@ const Dashboard = memo(() => {
                     {alert.item?.name}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {alert.current_quantity} / {alert.min_quantity} minimum
+                    {alert.currentQuantity} / {alert.minQuantity} minimum
                   </p>
                 </div>
                 <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                  alert.alert_level === 'critical' ? 'bg-red-100 text-red-800' :
-                  alert.alert_level === 'out_of_stock' ? 'bg-red-100 text-red-800' :
+                  alert.alertLevel === 'CRITICAL' ? 'bg-red-100 text-red-800' :
+                  alert.alertLevel === 'OUT_OF_STOCK' ? 'bg-red-100 text-red-800' :
                   'bg-orange-100 text-orange-800'
                 }`}>
-                  {alert.alert_level.replace('_', ' ')}
+                  {alert.alertLevel?.replace('_', ' ')}
                 </span>
               </div>
             ))}
