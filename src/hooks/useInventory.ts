@@ -1,443 +1,197 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase, createQuery, createSingleQuery } from '../lib/supabase';
-import type { InventoryItem, Category, Transaction, MaintenanceSchedule, LowStockAlert } from '../types';
+import { apiClient } from '../lib/api';
 import { toast } from 'react-hot-toast';
 
 export const useInventory = () => {
-  const queryClient = useQueryClient();
+  const [items, setItems] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [maintenance, setMaintenance] = useState<any[]>([]);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // Queries with better error handling and fallbacks
-  const categoriesQuery = useQuery({
-    queryKey: ['categories'],
-    queryFn: () => createQuery(
-      supabase
-        .from('categories')
-        .select('*')
-        .eq('is_active', true)
-        .order('name')
-    ),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    retry: 2,
-    retryDelay: 1000,
-  });
-
-  const inventoryQuery = useQuery({
-    queryKey: ['inventory'],
-    queryFn: () => createQuery(
-      supabase
-        .from('inventory_items')
-        .select(`
-          *,
-          category:categories(*)
-        `)
-        .order('name')
-    ),
-    staleTime: 1 * 60 * 1000, // 1 minute
-    retry: 2,
-    retryDelay: 1000,
-  });
-
-  // Simplified transactions query with fallback
-  const transactionsQuery = useQuery({
-    queryKey: ['transactions'],
-    queryFn: async () => {
-      try {
-        // Try the function approach first
-        const { data: functionData, error: functionError } = await supabase.rpc('get_transaction_with_details', {
-          limit_count: 100
-        });
-
-        if (!functionError && functionData) {
-          // Transform function result to match expected format
-          const transformedData = functionData.map((row: any) => ({
-            id: row.id,
-            item_id: row.item_id,
-            user_id: row.user_id,
-            transaction_type: row.transaction_type,
-            quantity: row.quantity,
-            due_date: row.due_date,
-            returned_date: row.returned_date,
-            status: row.status,
-            notes: row.notes,
-            approved_by: row.approved_by,
-            approved_at: row.approved_at,
-            location_used: row.location_used,
-            condition_on_return: row.condition_on_return,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            item: row.item_name ? {
-              id: row.item_id,
-              name: row.item_name,
-              description: row.item_description,
-              location: row.item_location,
-              status: row.item_status,
-              category: row.category_name ? { name: row.category_name } : null
-            } : null,
-            user: row.user_full_name ? {
-              user_id: row.user_id,
-              full_name: row.user_full_name,
-              email: row.user_email,
-              role: row.user_role,
-              department: row.user_department
-            } : null
-          }));
-
-          return { data: transformedData, error: null };
-        }
-
-        // Fallback to simple query without joins
-        console.warn('Function not available, using simple query');
-        const { data: transactions, error: transError } = await supabase
-          .from('transactions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-
-        if (transError) throw transError;
-
-        // Return transactions without related data for now
-        const simpleTransactions = (transactions || []).map(t => ({
-          ...t,
-          item: null,
-          user: null
-        }));
-
-        return { data: simpleTransactions, error: null };
-      } catch (error: any) {
-        console.error('Error fetching transactions:', error);
-        return { data: [], error: error.message };
-      }
-    },
-    staleTime: 30 * 1000, // 30 seconds
-    retry: 1,
-    retryDelay: 1000,
-  });
-
-  // Simplified maintenance query
-  const maintenanceQuery = useQuery({
-    queryKey: ['maintenance'],
-    queryFn: async () => {
-      try {
-        // Try the function approach first
-        const { data: functionData, error: functionError } = await supabase.rpc('get_maintenance_with_details', {
-          limit_count: 100
-        });
-
-        if (!functionError && functionData) {
-          return { data: functionData, error: null };
-        }
-
-        // Fallback to simple query
-        console.warn('Maintenance function not available, using simple query');
-        const { data: maintenance, error: maintError } = await supabase
-          .from('maintenance_schedules')
-          .select('*')
-          .order('scheduled_date', { ascending: false });
-
-        if (maintError) throw maintError;
-
-        return { data: maintenance || [], error: null };
-      } catch (error: any) {
-        console.error('Error fetching maintenance:', error);
-        return { data: [], error: error.message };
-      }
-    },
-    staleTime: 2 * 60 * 1000, // 2 minutes
-    retry: 1,
-    retryDelay: 1000,
-  });
-
-  const lowStockAlertsQuery = useQuery({
-    queryKey: ['low-stock-alerts'],
-    queryFn: () => createQuery(
-      supabase
-        .from('low_stock_alerts')
-        .select(`
-          *,
-          item:inventory_items(*)
-        `)
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-    ),
-    staleTime: 1 * 60 * 1000, // 1 minute
-    retry: 2,
-    retryDelay: 1000,
-  });
-
-  // Real-time subscriptions with better error handling
-  useEffect(() => {
-    let inventorySubscription: any = null;
-    let transactionSubscription: any = null;
-    let alertsSubscription: any = null;
-    let categoriesSubscription: any = null;
-
+  // Fetch all data
+  const fetchData = useCallback(async () => {
     try {
-      inventorySubscription = supabase
-        .channel('inventory_changes')
-        .on('postgres_changes', 
-          { event: '*', schema: 'public', table: 'inventory_items' },
-          () => {
-            queryClient.invalidateQueries({ queryKey: ['inventory'] });
-            queryClient.invalidateQueries({ queryKey: ['low-stock-alerts'] });
-          }
-        )
-        .subscribe();
+      setLoading(true);
+      setError(null);
 
-      transactionSubscription = supabase
-        .channel('transaction_changes')
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'transactions' },
-          () => {
-            queryClient.invalidateQueries({ queryKey: ['transactions'] });
-          }
-        )
-        .subscribe();
+      const [
+        itemsResult,
+        categoriesResult,
+        transactionsResult,
+        maintenanceResult,
+        alertsResult
+      ] = await Promise.all([
+        apiClient.getInventoryItems(),
+        apiClient.getCategories(),
+        apiClient.getTransactions(),
+        apiClient.getMaintenanceSchedules(),
+        apiClient.getLowStockAlerts()
+      ]);
 
-      alertsSubscription = supabase
-        .channel('alerts_changes')
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'low_stock_alerts' },
-          () => {
-            queryClient.invalidateQueries({ queryKey: ['low-stock-alerts'] });
-          }
-        )
-        .subscribe();
+      // Set data with proper fallbacks
+      setItems(itemsResult.data?.data || []);
+      setCategories(categoriesResult.data?.data || []);
+      setTransactions(transactionsResult.data?.data || []);
+      setMaintenance(maintenanceResult.data?.data || []);
+      setAlerts(alertsResult.data?.data || []);
 
-      categoriesSubscription = supabase
-        .channel('categories_changes')
-        .on('postgres_changes',
-          { event: '*', schema: 'public', table: 'categories' },
-          () => {
-            queryClient.invalidateQueries({ queryKey: ['categories'] });
-          }
-        )
-        .subscribe();
-    } catch (error) {
-      console.warn('Real-time subscriptions not available:', error);
-    }
-
-    return () => {
-      try {
-        inventorySubscription?.unsubscribe();
-        transactionSubscription?.unsubscribe();
-        alertsSubscription?.unsubscribe();
-        categoriesSubscription?.unsubscribe();
-      } catch (error) {
-        console.warn('Error unsubscribing from real-time:', error);
-      }
-    };
-  }, [queryClient]);
-
-  // Mutations with better error handling
-  const createItemMutation = useMutation({
-    mutationFn: async (item: Omit<InventoryItem, 'id' | 'created_at' | 'updated_at' | 'qr_code'>) => {
-      const { data, error } = await supabase
-        .from('inventory_items')
-        .insert(item)
-        .select()
-        .single();
+    } catch (error: any) {
+      console.error('Failed to fetch data:', error);
+      setError(error.message || 'Failed to fetch data');
       
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      // Set empty arrays as fallbacks on error
+      setItems([]);
+      setCategories([]);
+      setTransactions([]);
+      setMaintenance([]);
+      setAlerts([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Item operations
+  const createItem = useCallback(async (itemData: any) => {
+    try {
+      const result = await apiClient.createInventoryItem(itemData);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      
+      setItems(prev => [...prev, result.data.data]);
       toast.success('Item created successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to create item');
     }
-  });
+  }, []);
 
-  const updateItemMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<InventoryItem> }) => {
-      const { data, error } = await supabase
-        .from('inventory_items')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+  const updateItem = useCallback(async ({ id, updates }: { id: string; updates: any }) => {
+    try {
+      const result = await apiClient.updateInventoryItem(id, updates);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setItems(prev => prev.map(item => 
+        item.id === id ? result.data.data : item
+      ));
       toast.success('Item updated successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to update item');
     }
-  });
+  }, []);
 
-  const deleteItemMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('inventory_items')
-        .delete()
-        .eq('id', id);
+  const deleteItem = useCallback(async (id: string) => {
+    try {
+      const result = await apiClient.deleteInventoryItem(id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      setItems(prev => prev.filter(item => item.id !== id));
       toast.success('Item deleted successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to delete item');
     }
-  });
+  }, []);
 
-  // Category mutations
-  const createCategoryMutation = useMutation({
-    mutationFn: async (categoryData: Omit<Category, 'id' | 'created_at' | 'updated_at'>) => {
-      const { data, error } = await supabase
-        .from('categories')
-        .insert(categoryData)
-        .select()
-        .single();
+  // Category operations
+  const createCategory = useCallback(async (categoryData: any) => {
+    try {
+      const result = await apiClient.createCategory(categoryData);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      setCategories(prev => [...prev, result.data.data]);
       toast.success('Category created successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to create category');
     }
-  });
+  }, []);
 
-  const updateCategoryMutation = useMutation({
-    mutationFn: async ({ id, updates }: { id: string; updates: Partial<Category> }) => {
-      const { data, error } = await supabase
-        .from('categories')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .single();
+  const updateCategory = useCallback(async ({ id, updates }: { id: string; updates: any }) => {
+    try {
+      const result = await apiClient.updateCategory(id, updates);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      setCategories(prev => prev.map(cat => 
+        cat.id === id ? result.data.data : cat
+      ));
       toast.success('Category updated successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to update category');
     }
-  });
+  }, []);
 
-  const deleteCategoryMutation = useMutation({
-    mutationFn: async (categoryId: string) => {
-      const { error } = await supabase
-        .from('categories')
-        .delete()
-        .eq('id', categoryId);
+  const deleteCategory = useCallback(async (id: string) => {
+    try {
+      const result = await apiClient.deleteCategory(id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
+      setCategories(prev => prev.filter(cat => cat.id !== id));
       toast.success('Category deleted successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to delete category');
     }
-  });
+  }, []);
 
-  const createTransactionMutation = useMutation({
-    mutationFn: async (transaction: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>) => {
-      const { data, error } = await supabase
-        .from('transactions')
-        .insert(transaction)
-        .select()
-        .single();
-      
-      if (error) throw error;
-
-      // Update inventory quantity for checkout/checkin
-      try {
-        if (transaction.transaction_type === 'checkout') {
-          await supabase.rpc('update_inventory_quantity', {
-            item_id: transaction.item_id,
-            quantity_change: -transaction.quantity
-          });
-        } else if (transaction.transaction_type === 'checkin') {
-          await supabase.rpc('update_inventory_quantity', {
-            item_id: transaction.item_id,
-            quantity_change: transaction.quantity
-          });
-        }
-      } catch (rpcError) {
-        console.warn('RPC function not available, updating manually');
-        // Fallback to manual update
-        const { data: item } = await supabase
-          .from('inventory_items')
-          .select('quantity')
-          .eq('id', transaction.item_id)
-          .single();
-
-        if (item) {
-          const newQuantity = transaction.transaction_type === 'checkout' 
-            ? Math.max(0, item.quantity - transaction.quantity)
-            : item.quantity + transaction.quantity;
-
-          await supabase
-            .from('inventory_items')
-            .update({ quantity: newQuantity })
-            .eq('id', transaction.item_id);
-        }
+  // Transaction operations
+  const createTransaction = useCallback(async (transactionData: any) => {
+    try {
+      const result = await apiClient.createTransaction(transactionData);
+      if (result.error) {
+        toast.error(result.error);
+        return;
       }
-
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['inventory'] });
+      
+      setTransactions(prev => [result.data.data, ...prev]);
+      // Refresh items to get updated quantities
+      fetchData();
       toast.success('Transaction created successfully!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to create transaction');
     }
-  });
+  }, [fetchData]);
 
-  const acknowledgeAlertMutation = useMutation({
-    mutationFn: async ({ alertId, userId }: { alertId: string; userId: string }) => {
-      const { error } = await supabase
-        .from('low_stock_alerts')
-        .update({
-          status: 'acknowledged',
-          acknowledged_by: userId,
-          acknowledged_at: new Date().toISOString()
-        })
-        .eq('id', alertId);
+  // Alert operations
+  const acknowledgeAlert = useCallback(async ({ alertId }: { alertId: string }) => {
+    try {
+      const result = await apiClient.acknowledgeAlert(alertId);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
       
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['low-stock-alerts'] });
+      setAlerts(prev => prev.map(alert => 
+        alert.id === alertId ? result.data.data : alert
+      ));
       toast.success('Alert acknowledged!');
-    },
-    onError: (error: any) => {
+    } catch (error: any) {
       toast.error(error.message || 'Failed to acknowledge alert');
     }
-  });
+  }, []);
 
-  // Computed values with safe defaults
+  // Computed statistics with safe defaults
   const stats = useMemo(() => {
-    const items = inventoryQuery.data?.data || [];
-    const transactions = transactionsQuery.data?.data || [];
-    const alerts = lowStockAlertsQuery.data?.data || [];
-
     const totalItems = items.length;
-    const lowStockItems = alerts.filter(alert => alert.status === 'active').length;
-    const activeTransactions = transactions.filter(t => t.status === 'active').length;
-    const overdueItems = transactions.filter(t => t.status === 'overdue').length;
-    const totalValue = items.reduce((sum, item) => sum + (item.unit_price || 0) * item.quantity, 0);
+    const lowStockItems = alerts.filter(alert => alert.status === 'ACTIVE').length;
+    const activeTransactions = transactions.filter(t => t.status === 'ACTIVE').length;
+    const overdueItems = transactions.filter(t => t.status === 'OVERDUE').length;
+    const totalValue = items.reduce((sum, item) => sum + (item.unitPrice || 0) * item.quantity, 0);
 
     return {
       totalItems,
@@ -446,61 +200,59 @@ export const useInventory = () => {
       overdueItems,
       totalValue
     };
-  }, [inventoryQuery.data, transactionsQuery.data, lowStockAlertsQuery.data]);
+  }, [items, transactions, alerts]);
 
-  const lowStockItems = useMemo(() => {
-    const items = inventoryQuery.data?.data || [];
-    return items.filter(item => item.quantity <= item.min_quantity);
-  }, [inventoryQuery.data]);
-
-  const criticalItems = useMemo(() => {
-    const items = inventoryQuery.data?.data || [];
-    return items.filter(item => item.quantity <= item.min_quantity * 0.5);
-  }, [inventoryQuery.data]);
+  // Load data on mount
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   return {
     // Data with safe defaults
-    categories: categoriesQuery.data?.data || [],
-    items: inventoryQuery.data?.data || [],
-    transactions: transactionsQuery.data?.data || [],
-    maintenance: maintenanceQuery.data?.data || [],
-    alerts: lowStockAlertsQuery.data?.data || [],
+    items: items || [],
+    categories: categories || [],
+    transactions: transactions || [],
+    maintenance: maintenance || [],
+    alerts: alerts || [],
     
     // Loading states
-    isLoading: inventoryQuery.isLoading || categoriesQuery.isLoading,
-    isTransactionsLoading: transactionsQuery.isLoading,
-    isMaintenanceLoading: maintenanceQuery.isLoading,
-    isAlertsLoading: lowStockAlertsQuery.isLoading,
+    isLoading: loading,
+    isTransactionsLoading: loading,
+    isMaintenanceLoading: loading,
+    isAlertsLoading: loading,
     
-    // Error states
-    error: inventoryQuery.error || categoriesQuery.error,
+    // Error state
+    error,
     
-    // Item mutations
-    createItem: createItemMutation.mutate,
-    updateItem: updateItemMutation.mutate,
-    deleteItem: deleteItemMutation.mutate,
+    // Item operations
+    createItem,
+    updateItem,
+    deleteItem,
     
-    // Category mutations
-    createCategory: createCategoryMutation.mutate,
-    updateCategory: updateCategoryMutation.mutate,
-    deleteCategory: deleteCategoryMutation.mutate,
+    // Category operations
+    createCategory,
+    updateCategory,
+    deleteCategory,
     
-    // Other mutations
-    createTransaction: createTransactionMutation.mutate,
-    acknowledgeAlert: acknowledgeAlertMutation.mutate,
+    // Transaction operations
+    createTransaction,
+    
+    // Alert operations
+    acknowledgeAlert,
     
     // Computed data
     stats,
-    lowStockItems,
-    criticalItems,
     
-    // Loading states for mutations
-    isCreatingItem: createItemMutation.isPending,
-    isUpdatingItem: updateItemMutation.isPending,
-    isDeletingItem: deleteItemMutation.isPending,
-    isCreatingTransaction: createTransactionMutation.isPending,
-    isCreatingCategory: createCategoryMutation.isPending,
-    isUpdatingCategory: updateCategoryMutation.isPending,
-    isDeletingCategory: deleteCategoryMutation.isPending,
+    // Utility
+    refetch: fetchData,
+    
+    // Loading states for mutations (simplified)
+    isCreatingItem: false,
+    isUpdatingItem: false,
+    isDeletingItem: false,
+    isCreatingTransaction: false,
+    isCreatingCategory: false,
+    isUpdatingCategory: false,
+    isDeletingCategory: false,
   };
 };
