@@ -164,6 +164,8 @@ export const useLocalAuth = () => {
     signUp,
     signOut,
     updateProfile,
+    // Add profile for compatibility with existing components
+    profile: state.user,
     isAdmin: state.user?.role === 'ADMIN',
     isStaff: state.user?.role === 'STAFF',
     isMedicalPersonnel: state.user?.role === 'MEDICAL_PERSONNEL',
