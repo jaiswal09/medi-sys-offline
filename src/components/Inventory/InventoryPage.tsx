@@ -130,24 +130,44 @@ const InventoryPage = memo(() => {
     }
   };
 
-  const getStockLevelColor = (item: InventoryItem) => {
-    if (item.quantity === 0) return 'text-red-600';
-    if (item.quantity <= item.min_quantity) return 'text-orange-600';
-    return 'text-green-600';
-  };
+  // Stock level color and progress calculation based on ratio
+  const getStockInfo = (item: InventoryItem) => {
+    const current = item.quantity;
+    const minimum = item.min_quantity;
+    const ratio = minimum > 0 ? current / minimum : 0;
+    
+    // Calculate percentage for progress bar (0-100%)
+    let percentage;
+    let textColor;
+    let barColor;
+    
+    if (current === 0) {
+      // Out of stock - red
+      percentage = 0;
+      textColor = 'text-red-600';
+      barColor = 'bg-red-500';
+    } else if (ratio <= 0.5) {
+      // Very low stock (0-50% of minimum) - red
+      percentage = (ratio / 0.5) * 30; // Scale to 0-30%
+      textColor = 'text-red-600';
+      barColor = 'bg-red-500';
+    } else if (ratio <= 1.0) {
+      // Low stock (50-100% of minimum) - orange
+      percentage = 30 + ((ratio - 0.5) / 0.5) * 40; // Scale to 30-70%
+      textColor = 'text-orange-600';
+      barColor = 'bg-orange-500';
+    } else {
+      // Above minimum - green
+      percentage = Math.min(100, 70 + (ratio - 1) * 15); // Scale from 70% up
+      textColor = 'text-green-600';
+      barColor = 'bg-green-500';
+    }
 
-  const getStockProgressColor = (item: InventoryItem) => {
-    if (item.quantity === 0) return 'bg-red-500';
-    if (item.quantity <= item.min_quantity) return 'bg-orange-500';
-    return 'bg-green-500';
-  };
-
-  const calculateStockPercentage = (item: InventoryItem) => {
-    // Calculate percentage based on current vs minimum quantity
-    // If current is above minimum, show as full progress
-    // If current is below minimum, show proportional to minimum
-    const maxForCalculation = Math.max(item.min_quantity * 2, item.max_quantity || item.min_quantity * 2);
-    return Math.min(100, (item.quantity / maxForCalculation) * 100);
+    return {
+      percentage: Math.max(5, percentage), // Minimum 5% for visibility
+      textColor,
+      barColor
+    };
   };
 
   if (isLoading) {
@@ -344,7 +364,7 @@ const InventoryPage = memo(() => {
               {filteredItems.map((item) => {
                 const unitPrice = item.unit_price || item.unitPrice || 0;
                 const totalValue = unitPrice * item.quantity;
-                const stockPercentage = calculateStockPercentage(item);
+                const stockInfo = getStockInfo(item);
                 
                 return (
                   <tr key={item.id} className="hover:bg-gray-50">
@@ -363,14 +383,14 @@ const InventoryPage = memo(() => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="w-32">
-                        <div className={`text-sm font-medium ${getStockLevelColor(item)} mb-2`}>
+                      <div className="w-36">
+                        <div className={`text-sm font-medium ${stockInfo.textColor} mb-2`}>
                           {item.quantity} / {item.min_quantity} min
                         </div>
                         <div className="w-full bg-gray-200 rounded-full h-2">
                           <div
-                            className={`h-2 rounded-full ${getStockProgressColor(item)}`}
-                            style={{ width: `${stockPercentage}%` }}
+                            className={`h-2 rounded-full ${stockInfo.barColor} transition-all duration-300`}
+                            style={{ width: `${stockInfo.percentage}%` }}
                           />
                         </div>
                       </div>
