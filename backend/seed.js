@@ -218,6 +218,22 @@ async function main() {
         manufacturer: 'Kimberly-Clark',
         model: 'Level 1',
         notes: 'ASTM Level 1 certified'
+      },
+      {
+        name: 'Low Stock Test Item',
+        description: 'Item with low stock for testing alerts',
+        categoryId: createdCategories.find(c => c.name === 'Medical Equipment').id,
+        itemType: 'EQUIPMENT',
+        quantity: 2,
+        minQuantity: 10,
+        maxQuantity: 20,
+        unitPrice: 150.00,
+        location: 'Test Storage',
+        status: 'AVAILABLE',
+        serialNumber: 'LOW-2024-001',
+        manufacturer: 'Test Manufacturer',
+        model: 'Test Model',
+        notes: 'This item should trigger low stock alert'
       }
     ];
 
@@ -235,6 +251,47 @@ async function main() {
 
     console.log('✅ Inventory items created successfully');
 
+    // Create some sample transactions
+    const items = await prisma.inventoryItem.findMany();
+    if (items.length > 0) {
+      const sampleTransactions = [
+        {
+          itemId: items[0].id,
+          userId: doctor.id,
+          transactionType: 'CHECKOUT',
+          quantity: 2,
+          status: 'ACTIVE',
+          notes: 'For patient examination'
+        },
+        {
+          itemId: items[1].id,
+          userId: doctor.id,
+          transactionType: 'CHECKOUT',
+          quantity: 1,
+          status: 'COMPLETED',
+          notes: 'Returned after use',
+          returnedDate: new Date()
+        }
+      ];
+
+      for (const transaction of sampleTransactions) {
+        await prisma.transaction.create({
+          data: transaction
+        });
+      }
+
+      console.log('✅ Sample transactions created successfully');
+    }
+
+    // Verify data was created
+    const counts = {
+      users: await prisma.user.count(),
+      categories: await prisma.category.count(),
+      items: await prisma.inventoryItem.count(),
+      transactions: await prisma.transaction.count()
+    };
+
+    console.log('📊 Database counts:', counts);
     console.log('🎉 Database seeding completed successfully!');
     console.log('\n📋 Demo Accounts:');
     console.log('👨‍💼 Admin: admin@medcenter.com / admin123');

@@ -53,6 +53,24 @@ const InventoryPage = memo(() => {
     });
   }, [items, searchTerm, selectedCategory, selectedStatus]);
 
+  // Calculate proper statistics
+  const inventoryStats = useMemo(() => {
+    const totalItems = items.length;
+    const lowStockItems = items.filter(item => item.quantity <= item.min_quantity).length;
+    const totalValue = items.reduce((sum, item) => {
+      const price = item.unit_price || item.unitPrice || 0;
+      return sum + (price * item.quantity);
+    }, 0);
+    const categoriesCount = categories.length;
+
+    return {
+      totalItems,
+      lowStockItems,
+      totalValue,
+      categoriesCount
+    };
+  }, [items, categories]);
+
   const handleAddItem = () => {
     setSelectedItem(null);
     setIsModalOpen(true);
@@ -84,7 +102,7 @@ const InventoryPage = memo(() => {
       item.min_quantity,
       item.location,
       item.status,
-      item.unit_price || 0
+      item.unit_price || item.unitPrice || 0
     ]);
 
     const csvContent = [headers, ...csvData]
@@ -116,6 +134,17 @@ const InventoryPage = memo(() => {
     if (item.quantity === 0) return 'text-red-600';
     if (item.quantity <= item.min_quantity) return 'text-orange-600';
     return 'text-green-600';
+  };
+
+  const getStockProgressColor = (item: InventoryItem) => {
+    if (item.quantity === 0) return 'bg-red-500';
+    if (item.quantity <= item.min_quantity) return 'bg-orange-500';
+    return 'bg-green-500';
+  };
+
+  const calculateStockPercentage = (item: InventoryItem) => {
+    const maxQuantity = item.max_quantity || (item.min_quantity * 3); // Use 3x min as default max
+    return Math.min(100, (item.quantity / maxQuantity) * 100);
   };
 
   if (isLoading) {
@@ -189,7 +218,7 @@ const InventoryPage = memo(() => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Items</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.totalItems}</p>
+              <p className="text-2xl font-bold text-gray-900">{inventoryStats.totalItems}</p>
             </div>
             <Package className="w-8 h-8 text-blue-600" />
           </div>
@@ -198,7 +227,7 @@ const InventoryPage = memo(() => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Low Stock</p>
-              <p className="text-2xl font-bold text-orange-600">{stats.lowStockItems}</p>
+              <p className="text-2xl font-bold text-orange-600">{inventoryStats.lowStockItems}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-orange-600" />
           </div>
@@ -207,7 +236,7 @@ const InventoryPage = memo(() => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Value</p>
-              <p className="text-2xl font-bold text-green-600">₹{stats.totalValue.toLocaleString()}</p>
+              <p className="text-2xl font-bold text-green-600">₹{inventoryStats.totalValue.toLocaleString()}</p>
             </div>
             <Package className="w-8 h-8 text-green-600" />
           </div>
@@ -216,12 +245,25 @@ const InventoryPage = memo(() => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Categories</p>
-              <p className="text-2xl font-bold text-purple-600">{categories.length}</p>
+              <p className="text-2xl font-bold text-purple-600">{inventoryStats.categoriesCount}</p>
             </div>
             <Filter className="w-8 h-8 text-purple-600" />
           </div>
         </div>
       </div>
+
+      {/* Debug Info for Development */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <h3 className="text-sm font-medium text-yellow-900 mb-2">Debug Info</h3>
+          <div className="text-xs text-yellow-700 grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div>Items loaded: {items.length}</div>
+            <div>Categories: {categories.length}</div>
+            <div>Filtered items: {filteredItems.length}</div>
+            <div>Total value calculation: ₹{inventoryStats.totalValue}</div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -309,80 +351,90 @@ const InventoryPage = memo(() => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {filteredItems.map((item) => (
-                <tr key={item.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">{item.name}</div>
-                      <div className="text-sm text-gray-500">{item.description}</div>
-                      {item.serial_number && (
-                        <div className="text-xs text-gray-400">SN: {item.serial_number}</div>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                      {item.category?.name || 'Uncategorized'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className={`text-sm font-medium ${getStockLevelColor(item)}`}>
-                      {item.quantity} / {item.min_quantity} min
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-1">
-                      <div
-                        className={`h-2 rounded-full ${
-                          item.quantity === 0 ? 'bg-red-500' :
-                          item.quantity <= item.min_quantity ? 'bg-orange-500' : 'bg-green-500'
-                        }`}
-                        style={{
-                          width: `${Math.min(100, (item.quantity / (item.max_quantity || item.min_quantity * 2)) * 100)}%`
-                        }}
-                      />
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {item.location}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
-                      {item.status.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    ₹{((item.unit_price || 0) * item.quantity).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => handleShowQR(item)}
-                        className="text-blue-600 hover:text-blue-900"
-                        title="Show QR Code"
-                      >
-                        <QrCode className="w-4 h-4" />
-                      </button>
-                      {canManageInventory && (
-                        <>
-                          <button
-                            onClick={() => handleEditItem(item)}
-                            className="text-indigo-600 hover:text-indigo-900"
-                            title="Edit Item"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteItem(item)}
-                            className="text-red-600 hover:text-red-900"
-                            title="Delete Item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredItems.map((item) => {
+                const unitPrice = item.unit_price || item.unitPrice || 0;
+                const totalValue = unitPrice * item.quantity;
+                const stockPercentage = calculateStockPercentage(item);
+                
+                return (
+                  <tr key={item.id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div>
+                        <div className="text-sm font-medium text-gray-900">{item.name}</div>
+                        <div className="text-sm text-gray-500">{item.description}</div>
+                        {item.serial_number && (
+                          <div className="text-xs text-gray-400">SN: {item.serial_number}</div>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        {item.category?.name || 'Uncategorized'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className={`text-sm font-medium ${getStockLevelColor(item)} mb-1`}>
+                        Current: {item.quantity} | Min: {item.min_quantity}
+                        {item.max_quantity && ` | Max: ${item.max_quantity}`}
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${getStockProgressColor(item)}`}
+                          style={{ width: `${stockPercentage}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0</span>
+                        <span>Min: {item.min_quantity}</span>
+                        <span>{item.max_quantity || (item.min_quantity * 3)}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {item.location}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(item.status)}`}>
+                        {item.status.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        <div className="font-medium">₹{totalValue.toLocaleString()}</div>
+                        <div className="text-xs text-gray-500">₹{unitPrice}/unit</div>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleShowQR(item)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="Show QR Code"
+                        >
+                          <QrCode className="w-4 h-4" />
+                        </button>
+                        {canManageInventory && (
+                          <>
+                            <button
+                              onClick={() => handleEditItem(item)}
+                              className="text-indigo-600 hover:text-indigo-900"
+                              title="Edit Item"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteItem(item)}
+                              className="text-red-600 hover:text-red-900"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
