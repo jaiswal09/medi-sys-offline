@@ -143,8 +143,11 @@ const InventoryPage = memo(() => {
   };
 
   const calculateStockPercentage = (item: InventoryItem) => {
-    const maxQuantity = item.max_quantity || (item.min_quantity * 3); // Use 3x min as default max
-    return Math.min(100, (item.quantity / maxQuantity) * 100);
+    // Calculate percentage based on current vs minimum quantity
+    // If current is above minimum, show as full progress
+    // If current is below minimum, show proportional to minimum
+    const maxForCalculation = Math.max(item.min_quantity * 2, item.max_quantity || item.min_quantity * 2);
+    return Math.min(100, (item.quantity / maxForCalculation) * 100);
   };
 
   if (isLoading) {
@@ -251,19 +254,6 @@ const InventoryPage = memo(() => {
           </div>
         </div>
       </div>
-
-      {/* Debug Info for Development */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <h3 className="text-sm font-medium text-yellow-900 mb-2">Debug Info</h3>
-          <div className="text-xs text-yellow-700 grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div>Items loaded: {items.length}</div>
-            <div>Categories: {categories.length}</div>
-            <div>Filtered items: {filteredItems.length}</div>
-            <div>Total value calculation: ₹{inventoryStats.totalValue}</div>
-          </div>
-        </div>
-      )}
 
       {/* Filters */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -373,20 +363,16 @@ const InventoryPage = memo(() => {
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className={`text-sm font-medium ${getStockLevelColor(item)} mb-1`}>
-                        Current: {item.quantity} | Min: {item.min_quantity}
-                        {item.max_quantity && ` | Max: ${item.max_quantity}`}
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className={`h-2 rounded-full ${getStockProgressColor(item)}`}
-                          style={{ width: `${stockPercentage}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>0</span>
-                        <span>Min: {item.min_quantity}</span>
-                        <span>{item.max_quantity || (item.min_quantity * 3)}</span>
+                      <div className="w-32">
+                        <div className={`text-sm font-medium ${getStockLevelColor(item)} mb-2`}>
+                          {item.quantity} / {item.min_quantity} min
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full ${getStockProgressColor(item)}`}
+                            style={{ width: `${stockPercentage}%` }}
+                          />
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
