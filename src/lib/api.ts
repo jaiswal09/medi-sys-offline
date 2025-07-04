@@ -3,6 +3,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
 class ApiClient {
   private baseURL: string;
   private token: string | null = null;
+  private requestQueue: Map<string, Promise<any>> = new Map();
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
@@ -23,6 +24,13 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<{ data: T; error: string | null }> {
     const url = `${this.baseURL}${endpoint}`;
+    const requestKey = `${options.method || 'GET'}-${url}`;
+    
+    // Prevent duplicate requests
+    if (this.requestQueue.has(requestKey)) {
+      console.log('🔄 Reusing existing request for:', requestKey);
+      return this.requestQueue.get(requestKey);
+    }
     
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -33,26 +41,40 @@ class ApiClient {
       headers.Authorization = `Bearer ${this.token}`;
     }
 
-    try {
-      const response = await fetch(url, {
-        ...options,
-        headers,
-      });
+    const requestPromise = (async () => {
+      try {
+        console.log('📡 Making API request:', options.method || 'GET', endpoint);
+        
+        const response = await fetch(url, {
+          ...options,
+          headers,
+        });
 
-      const data = await response.json();
+        const data = await response.json();
 
-      if (!response.ok) {
-        return { data: null as T, error: data.error || 'Request failed' };
+        if (!response.ok) {
+          console.error('❌ API Error:', response.status, data.error);
+          return { data: null as T, error: data.error || 'Request failed' };
+        }
+
+        console.log('✅ API Success:', options.method || 'GET', endpoint);
+        return { data, error: null };
+      } catch (error) {
+        console.error('❌ API request failed:', error);
+        return { 
+          data: null as T, 
+          error: error instanceof Error ? error.message : 'Network error' 
+        };
+      } finally {
+        // Remove from queue after completion
+        this.requestQueue.delete(requestKey);
       }
+    })();
 
-      return { data, error: null };
-    } catch (error) {
-      console.error('API request failed:', error);
-      return { 
-        data: null as T, 
-        error: error instanceof Error ? error.message : 'Network error' 
-      };
-    }
+    // Add to queue
+    this.requestQueue.set(requestKey, requestPromise);
+    
+    return requestPromise;
   }
 
   // Auth methods
@@ -95,6 +117,7 @@ class ApiClient {
 
   logout() {
     this.setToken(null);
+    this.requestQueue.clear(); // Clear any pending requests
   }
 
   // Categories
