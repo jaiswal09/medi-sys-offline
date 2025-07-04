@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../lib/api';
 import { toast } from 'react-hot-toast';
 
@@ -25,18 +25,25 @@ export const useLocalAuth = () => {
     error: null
   });
 
+  // Use refs to prevent multiple simultaneous requests
+  const isValidatingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+
   const signIn = useCallback(async (email: string, password: string) => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       
+      console.log('🔐 Attempting login for:', email);
       const result = await apiClient.login(email, password);
       
       if (result.error) {
+        console.error('❌ Login failed:', result.error);
         setState(prev => ({ ...prev, error: result.error, loading: false }));
         toast.error(result.error);
         return { success: false, error: result.error };
       }
 
+      console.log('✅ Login successful:', result.data.user);
       setState(prev => ({ 
         ...prev, 
         user: result.data.user, 
@@ -48,6 +55,7 @@ export const useLocalAuth = () => {
       return { success: true };
     } catch (error: any) {
       const errorMessage = error.message || 'Failed to sign in';
+      console.error('❌ Login error:', error);
       setState(prev => ({ ...prev, error: errorMessage, loading: false }));
       toast.error(errorMessage);
       return { success: false, error: errorMessage };
@@ -58,14 +66,17 @@ export const useLocalAuth = () => {
     try {
       setState(prev => ({ ...prev, loading: true, error: null }));
       
+      console.log('📝 Attempting registration for:', userData.email);
       const result = await apiClient.register(userData);
       
       if (result.error) {
+        console.error('❌ Registration failed:', result.error);
         setState(prev => ({ ...prev, error: result.error, loading: false }));
         toast.error(result.error);
         return { success: false, error: result.error };
       }
 
+      console.log('✅ Registration successful:', result.data.user);
       setState(prev => ({ 
         ...prev, 
         user: result.data.user, 
@@ -77,6 +88,7 @@ export const useLocalAuth = () => {
       return { success: true };
     } catch (error: any) {
       const errorMessage = error.message || 'Failed to create account';
+      console.error('❌ Registration error:', error);
       setState(prev => ({ ...prev, error: errorMessage, loading: false }));
       toast.error(errorMessage);
       return { success: false, error: errorMessage };
@@ -85,15 +97,17 @@ export const useLocalAuth = () => {
 
   const signOut = useCallback(async () => {
     try {
+      console.log('🚪 Signing out user');
       apiClient.logout();
       setState({
         user: null,
         loading: false,
         error: null
       });
+      hasInitializedRef.current = false;
       toast.success('Successfully signed out!');
     } catch (error: any) {
-      console.error('Error signing out:', error);
+      console.error('❌ Error signing out:', error);
       toast.error('Error signing out');
     }
   }, []);
@@ -102,6 +116,7 @@ export const useLocalAuth = () => {
     if (!state.user) return { success: false, error: 'Not authenticated' };
 
     try {
+      console.log('👤 Updating profile:', updates);
       const result = await apiClient.updateProfile(updates);
       
       if (result.error) {
@@ -123,40 +138,55 @@ export const useLocalAuth = () => {
     }
   }, [state.user]);
 
-  // Check for existing session on mount
+  // Single session validation on mount only
   useEffect(() => {
-    const checkSession = async () => {
+    const validateSession = async () => {
+      // Prevent multiple simultaneous validations
+      if (isValidatingRef.current || hasInitializedRef.current) {
+        return;
+      }
+
+      isValidatingRef.current = true;
+      hasInitializedRef.current = true;
+
       const token = localStorage.getItem('auth_token');
       
       if (!token) {
+        console.log('🔍 No token found, user not authenticated');
         setState(prev => ({ ...prev, loading: false }));
+        isValidatingRef.current = false;
         return;
       }
 
       try {
+        console.log('🔍 Validating existing session...');
         const result = await apiClient.getCurrentUser();
         
         if (result.error) {
-          // Token is invalid, clear it
+          console.log('❌ Session invalid, clearing token');
           apiClient.logout();
           setState(prev => ({ ...prev, loading: false }));
+          isValidatingRef.current = false;
           return;
         }
 
+        console.log('✅ Session valid, user authenticated:', result.data.user);
         setState(prev => ({
           ...prev,
           user: result.data.user,
           loading: false
         }));
       } catch (error) {
-        console.error('Session check failed:', error);
+        console.error('❌ Session validation failed:', error);
         apiClient.logout();
         setState(prev => ({ ...prev, loading: false }));
+      } finally {
+        isValidatingRef.current = false;
       }
     };
 
-    checkSession();
-  }, []);
+    validateSession();
+  }, []); // Empty dependency array - only run once on mount
 
   return {
     ...state,
