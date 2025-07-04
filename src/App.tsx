@@ -16,7 +16,7 @@ import DebugPanel from './components/Debug/DebugPanel';
 import AINotificationPanel from './components/AI/AINotificationPanel';
 
 function App() {
-  const { user, loading } = useLocalAuth();
+  const { user, loading, profile } = useLocalAuth();
 
   // Show loading with timeout protection
   if (loading) {
