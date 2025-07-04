@@ -29,14 +29,12 @@ const Sidebar = memo(() => {
   const { user, profile } = useLocalAuth();
   const { toggleDebugPanel, debugInfo } = useDebug();
 
-  // Use user role for filtering navigation
+  // Use user role for filtering navigation - with enhanced debugging
   const userRole = user?.role || profile?.role;
   
   const filteredNavigation = navigation.filter(item => 
     userRole && item.roles.includes(userRole)
   );
-
-  console.log('Sidebar Debug:', { user, profile, userRole, filteredNavigation });
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
@@ -122,12 +120,12 @@ const Sidebar = memo(() => {
         <div className="flex items-center space-x-3">
           <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
             <span className="text-xs font-medium text-gray-600">
-              {(user?.fullName || profile?.fullName)?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
+              {(user?.fullName || profile?.full_name)?.split(' ').map(n => n[0]).join('').slice(0, 2) || 'U'}
             </span>
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-gray-900 truncate">
-              {user?.fullName || profile?.fullName || 'User'}
+              {user?.fullName || profile?.full_name || 'User'}
             </p>
             <p className="text-xs text-gray-500 capitalize">
               {(user?.role || profile?.role)?.replace('_', ' ').toLowerCase() || 'No role'}
